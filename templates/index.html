@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TJK ゴルフ自動予約</title>
+<style>
+  :root {
+    --green:  #2e7d32;
+    --green2: #43a047;
+    --green3: #e8f5e9;
+    --blue:   #1565c0;
+    --red:    #c62828;
+    --amber:  #e65100;
+    --gray:   #546e7a;
+    --bg:     #f5f7fa;
+    --card:   #ffffff;
+    --radius: 12px;
+    --shadow: 0 2px 16px rgba(0,0,0,.10);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif;
+    background: var(--bg);
+    color: #263238;
+    min-height: 100vh;
+  }
+
+  /* ─── ヘッダー ─── */
+  header {
+    background: linear-gradient(135deg, var(--green) 0%, var(--green2) 100%);
+    color: #fff;
+    padding: 20px 24px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.2);
+  }
+  header .icon { font-size: 2rem; }
+  header h1 { font-size: 1.25rem; font-weight: 700; line-height: 1.2; }
+  header p  { font-size: .8rem; opacity: .85; margin-top: 2px; }
+
+  /* ─── レイアウト ─── */
+  main {
+    max-width: 960px;
+    margin: 28px auto;
+    padding: 0 16px 60px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+  @media (max-width: 680px) {
+    main { grid-template-columns: 1fr; }
+  }
+
+  /* ─── カード ─── */
+  .card {
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 24px;
+  }
+  .card-full { grid-column: 1 / -1; }
+
+  .card h2 {
+    font-size: .95rem;
+    font-weight: 700;
+    color: var(--green);
+    margin-bottom: 18px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-bottom: 2px solid var(--green3);
+    padding-bottom: 10px;
+  }
+
+  /* ─── フォームパーツ ─── */
+  .field { margin-bottom: 16px; }
+  .field label {
+    display: block;
+    font-size: .82rem;
+    font-weight: 600;
+    color: var(--gray);
+    margin-bottom: 6px;
+    letter-spacing: .02em;
+  }
+  .field label .required {
+    color: var(--red);
+    margin-left: 3px;
+    font-size: .75rem;
+  }
+
+  .field input,
+  .field select {
+    width: 100%;
+    padding: 11px 14px;
+    border: 1.5px solid #cfd8dc;
+    border-radius: 8px;
+    font-size: .95rem;
+    font-family: inherit;
+    transition: border-color .2s, box-shadow .2s;
+    background: #fafafa;
+    color: #263238;
+  }
+  .field input:focus,
+  .field select:focus {
+    outline: none;
+    border-color: var(--green2);
+    box-shadow: 0 0 0 3px rgba(67,160,71,.15);
+    background: #fff;
+  }
+
+  /* パスワード表示トグル */
+  .pw-wrap { position: relative; }
+  .pw-wrap input { padding-right: 44px; }
+  .pw-toggle {
+    position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+    background: none; border: none; cursor: pointer;
+    color: var(--gray); font-size: 1rem; padding: 4px;
+    line-height: 1;
+  }
+
+  /* ─── 実行ボタン ─── */
+  .btn-start {
+    width: 100%;
+    padding: 18px;
+    background: linear-gradient(135deg, var(--green) 0%, var(--green2) 100%);
+    color: #fff;
+    font-size: 1.1rem;
+    font-weight: 700;
+    border: none;
+    border-radius: var(--radius);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    box-shadow: 0 4px 14px rgba(46,125,50,.35);
+    transition: transform .15s, box-shadow .15s, opacity .15s;
+    letter-spacing: .04em;
+  }
+  .btn-start:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(46,125,50,.45);
+  }
+  .btn-start:active:not(:disabled) { transform: translateY(0); }
+  .btn-start:disabled { opacity: .5; cursor: not-allowed; }
+
+  .btn-stop {
+    width: 100%;
+    padding: 12px;
+    background: #fff;
+    color: var(--red);
+    font-size: .95rem;
+    font-weight: 600;
+    border: 2px solid var(--red);
+    border-radius: var(--radius);
+    cursor: pointer;
+    margin-top: 10px;
+    transition: background .15s;
+    display: none;
+  }
+  .btn-stop:hover { background: #ffebee; }
+
+  /* ─── ステータスバッジ ─── */
+  #status-badge {
+    padding: 10px 16px;
+    border-radius: 8px;
+    font-size: .9rem;
+    font-weight: 600;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+  }
+  .badge-idle     { background: #eceff1; color: var(--gray); }
+  .badge-waiting  { background: #fff8e1; color: #f57f17; }
+  .badge-running  { background: #e3f2fd; color: var(--blue); }
+  .badge-success  { background: #e8f5e9; color: var(--green); }
+  .badge-failed   { background: #ffebee; color: var(--red); }
+  .badge-cancelled{ background: #f3e5f5; color: #6a1b9a; }
+
+  /* 回転アニメーション */
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner { display: inline-block; animation: spin 1s linear infinite; }
+
+  /* ─── ログビューア ─── */
+  #log-box {
+    background: #1a1a2e;
+    border-radius: 8px;
+    padding: 14px;
+    height: 280px;
+    overflow-y: auto;
+    font-family: "Menlo", "Monaco", "Consolas", monospace;
+    font-size: .78rem;
+    line-height: 1.6;
+  }
+  .log-line { display: flex; gap: 8px; }
+  .log-time { color: #546e7a; flex-shrink: 0; }
+  .log-info    { color: #81c784; }
+  .log-success { color: #a5d6a7; font-weight: 700; }
+  .log-warn    { color: #ffb74d; }
+  .log-error   { color: #ef9a9a; }
+
+  /* ─── 試行カウンター ─── */
+  .attempt-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+    font-size: .85rem;
+    color: var(--gray);
+  }
+  .attempt-track {
+    flex: 1;
+    height: 6px;
+    background: #e0e0e0;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .attempt-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--green), var(--green2));
+    border-radius: 3px;
+    transition: width .4s;
+    width: 0%;
+  }
+
+  /* ─── スクリーンショット ─── */
+  #shots-wrap {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 10px;
+    max-height: 240px;
+    overflow-y: auto;
+  }
+  .shot-thumb {
+    position: relative;
+    border-radius: 6px;
+    overflow: hidden;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: border-color .2s;
+  }
+  .shot-thumb:hover { border-color: var(--green2); }
+  .shot-thumb img { width: 100%; display: block; border-radius: 4px; }
+  .shot-label {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    background: rgba(0,0,0,.6);
+    color: #fff;
+    font-size: .65rem;
+    padding: 3px 6px;
+    text-align: center;
+  }
+
+  /* ─── モーダル（拡大表示）─── */
+  #modal {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.85);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+  }
+  #modal.open { display: flex; }
+  #modal img { max-width: 92vw; max-height: 92vh; border-radius: 8px; }
+  #modal-close {
+    position: absolute; top: 20px; right: 24px;
+    color: #fff; font-size: 2rem; cursor: pointer;
+    background: none; border: none;
+  }
+
+  /* ─── ヒント ─── */
+  .hint { font-size: .75rem; color: #90a4ae; margin-top: 5px; }
+
+  /* ─── 詳細オプション折りたたみ ─── */
+  details summary {
+    cursor: pointer;
+    font-size: .85rem;
+    color: var(--gray);
+    padding: 8px 0;
+    user-select: none;
+    list-style: none;
+  }
+  details summary::-webkit-details-marker { display: none; }
+  details summary::before { content: "▶ "; font-size: .7rem; }
+  details[open] summary::before { content: "▼ "; }
+  details .detail-inner { padding-top: 12px; }
+
+  /* ─── 空のスクリーンショット ─── */
+  .no-shots {
+    text-align: center;
+    color: #b0bec5;
+    font-size: .85rem;
+    padding: 20px;
+    grid-column: 1/-1;
+  }
+</style>
+</head>
+<body>
+
+<!-- ヘッダー -->
+<header>
+  <span class="icon">⛳</span>
+  <div>
+    <h1>TJK 成田ビューゴルフコース 自動予約</h1>
+    <p>指定した時刻になると自動でゴルフの予約を行います</p>
+  </div>
+</header>
+
+<main>
+
+  <!-- ── ログイン情報 ── -->
+  <div class="card">
+    <h2>🔐 TJK ログイン情報</h2>
+
+    <div class="field">
+      <label>会員番号 <span class="required">必須</span></label>
+      <input id="username" type="text" placeholder="例: 12345678" inputmode="numeric">
+    </div>
+
+    <div class="field">
+      <label>パスワード <span class="required">必須</span></label>
+      <div class="pw-wrap">
+        <input id="password" type="password" placeholder="パスワードを入力">
+        <button class="pw-toggle" onclick="togglePw()" title="表示/非表示">👁</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 予約受付開始時刻 ── -->
+  <div class="card">
+    <h2>⏰ 予約受付の開始時刻</h2>
+    <p class="hint" style="margin-bottom:14px">この日時になると自動で予約を開始します</p>
+
+    <div class="field">
+      <label>受付開始日 <span class="required">必須</span></label>
+      <input id="start-date" type="date">
+    </div>
+
+    <div class="field">
+      <label>受付開始時刻 <span class="required">必須</span></label>
+      <input id="start-time" type="time" value="10:00">
+    </div>
+  </div>
+
+  <!-- ── 予約内容 ── -->
+  <div class="card">
+    <h2>📅 希望プレー情報</h2>
+
+    <div class="field">
+      <label>プレー希望日 <span class="required">必須</span></label>
+      <input id="play-date" type="date">
+    </div>
+
+    <div class="field">
+      <label>希望スタート時刻 <span class="required">必須</span></label>
+      <input id="play-time" type="time" value="08:30">
+    </div>
+
+    <div class="field">
+      <label>プレー人数</label>
+      <select id="num-players">
+        <option value="1">1名</option>
+        <option value="2">2名</option>
+        <option value="3">3名</option>
+        <option value="4" selected>4名</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- ── 実行ボタン ── -->
+  <div class="card">
+    <h2>🚀 予約を実行する</h2>
+
+    <details style="margin-bottom:18px">
+      <summary>詳細設定（任意）</summary>
+      <div class="detail-inner">
+        <div class="field">
+          <label>最大リトライ回数</label>
+          <select id="max-attempts">
+            <option value="5">5回</option>
+            <option value="10" selected>10回</option>
+            <option value="20">20回</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>ブラウザ表示</label>
+          <select id="headless">
+            <option value="false" selected>表示する（確認しながら）</option>
+            <option value="true">非表示（バックグラウンド）</option>
+          </select>
+        </div>
+      </div>
+    </details>
+
+    <button class="btn-start" id="btn-start" onclick="startReservation()">
+      <span id="btn-icon">⛳</span>
+      <span id="btn-label">予約を開始する</span>
+    </button>
+
+    <button class="btn-stop" id="btn-stop" onclick="stopReservation()">
+      ⛔ キャンセルする
+    </button>
+
+    <p class="hint" style="margin-top: 14px; text-align:center">
+      ボタンを押したら、このページは閉じずにそのままにしてください
+    </p>
+  </div>
+
+  <!-- ── ステータス & ログ ── -->
+  <div class="card card-full">
+    <h2>📊 実行状況</h2>
+
+    <div id="status-badge" class="badge-idle">
+      <span id="status-icon">💤</span>
+      <span id="status-text">待機中 — 上のフォームを入力してボタンを押してください</span>
+    </div>
+
+    <div class="attempt-bar" id="attempt-bar" style="display:none">
+      <span id="attempt-label">試行: 0/10</span>
+      <div class="attempt-track">
+        <div class="attempt-fill" id="attempt-fill"></div>
+      </div>
+    </div>
+
+    <div id="log-box"></div>
+  </div>
+
+  <!-- ── スクリーンショット ── -->
+  <div class="card card-full">
+    <h2>🖼 スクリーンショット</h2>
+    <p class="hint" style="margin-bottom:12px">処理の各ステップが自動で保存されます。画像をクリックすると拡大表示</p>
+    <div id="shots-wrap">
+      <div class="no-shots" id="no-shots">まだスクリーンショットはありません</div>
+    </div>
+  </div>
+
+</main>
+
+<!-- 拡大モーダル -->
+<div id="modal">
+  <button id="modal-close" onclick="closeModal()">✕</button>
+  <img id="modal-img" src="" alt="">
+</div>
+
+<script>
+// ─────────────────────────────
+// 状態
+// ─────────────────────────────
+let es = null;   // EventSource
+let running = false;
+
+// ─────────────────────────────
+// 初期化
+// ─────────────────────────────
+window.addEventListener("DOMContentLoaded", () => {
+  // 今日以降の日付をデフォルトに
+  const today = new Date();
+  const fmt   = d => d.toISOString().slice(0,10);
+  const plus  = (n) => { const d = new Date(today); d.setDate(d.getDate()+n); return d; };
+
+  document.getElementById("start-date").value = fmt(plus(7));
+  document.getElementById("play-date").value  = fmt(plus(30));
+
+  // 既存の状態を取得
+  fetch("/api/state").then(r=>r.json()).then(s => {
+    applyState(s);
+    if (s.status === "waiting" || s.status === "running") {
+      running = true;
+      connectSSE();
+      updateButtons(true);
+    }
+  });
+});
+
+// ─────────────────────────────
+// パスワード表示トグル
+// ─────────────────────────────
+function togglePw() {
+  const inp = document.getElementById("password");
+  inp.type = inp.type === "password" ? "text" : "password";
+}
+
+// ─────────────────────────────
+// バリデーション
+// ─────────────────────────────
+function validate() {
+  const v = id => document.getElementById(id).value.trim();
+  if (!v("username"))   { alert("会員番号を入力してください"); return false; }
+  if (!v("password"))   { alert("パスワードを入力してください"); return false; }
+  if (!v("start-date")) { alert("受付開始日を入力してください"); return false; }
+  if (!v("start-time")) { alert("受付開始時刻を入力してください"); return false; }
+  if (!v("play-date"))  { alert("プレー希望日を入力してください"); return false; }
+  if (!v("play-time"))  { alert("希望スタート時刻を入力してください"); return false; }
+  return true;
+}
+
+// ─────────────────────────────
+// 予約開始
+// ─────────────────────────────
+async function startReservation() {
+  if (!validate()) return;
+
+  const payload = {
+    username:         document.getElementById("username").value.trim(),
+    password:         document.getElementById("password").value,
+    start_date:       document.getElementById("start-date").value,
+    start_time:       document.getElementById("start-time").value,
+    play_date:        document.getElementById("play-date").value,
+    play_time:        document.getElementById("play-time").value,
+    num_players:      document.getElementById("num-players").value,
+    max_attempts:     document.getElementById("max-attempts").value,
+    headless:         document.getElementById("headless").value === "true",
+  };
+
+  const res = await fetch("/api/start", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(payload),
+  });
+  const json = await res.json();
+
+  if (!json.ok) {
+    alert("エラー: " + (json.error || "不明なエラー"));
+    return;
+  }
+
+  running = true;
+  updateButtons(true);
+  clearLog();
+  connectSSE();
+}
+
+// ─────────────────────────────
+// キャンセル
+// ─────────────────────────────
+async function stopReservation() {
+  if (!confirm("予約をキャンセルしますか？")) return;
+  await fetch("/api/stop", { method: "POST" });
+  running = false;
+  updateButtons(false);
+}
+
+// ─────────────────────────────
+// SSE 接続
+// ─────────────────────────────
+function connectSSE() {
+  if (es) { es.close(); }
+  es = new EventSource("/stream");
+  es.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === "ping") return;
+    if (msg.type === "log")        appendLog(msg);
+    if (msg.type === "screenshot") appendShot(msg.filename, msg.time);
+    if (msg.type === "state")      applyState(msg.state);
+  };
+  es.onerror = () => {
+    // 切断後に状態を再取得
+    fetch("/api/state").then(r=>r.json()).then(s => applyState(s));
+  };
+}
+
+// ─────────────────────────────
+// ログ追加
+// ─────────────────────────────
+function appendLog(msg) {
+  const box  = document.getElementById("log-box");
+  const line = document.createElement("div");
+  line.className = "log-line";
+  line.innerHTML = `<span class="log-time">${msg.time}</span>`
+                 + `<span class="log-${msg.level}">${escHtml(msg.message)}</span>`;
+  box.appendChild(line);
+  box.scrollTop = box.scrollHeight;
+}
+function clearLog() {
+  document.getElementById("log-box").innerHTML = "";
+}
+function escHtml(s) {
+  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+// ─────────────────────────────
+// スクリーンショット追加
+// ─────────────────────────────
+function appendShot(filename, time) {
+  const wrap = document.getElementById("shots-wrap");
+  const none = document.getElementById("no-shots");
+  if (none) none.remove();
+
+  const div = document.createElement("div");
+  div.className = "shot-thumb";
+  div.onclick   = () => openModal(`/screenshots/${filename}`);
+  div.innerHTML = `<img src="/screenshots/${filename}" loading="lazy" alt="${filename}">
+                   <div class="shot-label">${time}</div>`;
+  wrap.appendChild(div);
+}
+
+// ─────────────────────────────
+// 状態バッジ更新
+// ─────────────────────────────
+function applyState(s) {
+  const badge = document.getElementById("status-badge");
+  const icon  = document.getElementById("status-icon");
+  const text  = document.getElementById("status-text");
+  const aBar  = document.getElementById("attempt-bar");
+  const aLbl  = document.getElementById("attempt-label");
+  const aFill = document.getElementById("attempt-fill");
+
+  const MAP = {
+    idle:      { cls:"badge-idle",      icon:"💤", spin:false },
+    waiting:   { cls:"badge-waiting",   icon:"⏳", spin:true  },
+    running:   { cls:"badge-running",   icon:"⚙️", spin:true  },
+    success:   { cls:"badge-success",   icon:"🎉", spin:false },
+    failed:    { cls:"badge-failed",    icon:"❌", spin:false },
+    cancelled: { cls:"badge-cancelled", icon:"⛔", spin:false },
+  };
+  const m = MAP[s.status] || MAP.idle;
+
+  badge.className = `badge-${s.status}` in ({} ) ? "" : "";
+  badge.className = m.cls;
+  icon.className  = m.spin ? "spinner" : "";
+  icon.textContent = m.icon;
+  text.textContent = s.message || s.status;
+
+  if (s.status === "running" || s.status === "waiting") {
+    updateButtons(true);
+  } else if (["success","failed","cancelled"].includes(s.status)) {
+    updateButtons(false);
+    if (es) { es.close(); es = null; }
+    running = false;
+  }
+
+  // 試行バー
+  if (s.attempt > 0 && s.max_attempts > 0) {
+    aBar.style.display = "flex";
+    aLbl.textContent  = `試行: ${s.attempt} / ${s.max_attempts}`;
+    aFill.style.width = (s.attempt / s.max_attempts * 100) + "%";
+  } else {
+    aBar.style.display = "none";
+  }
+}
+
+// ─────────────────────────────
+// ボタン状態更新
+// ─────────────────────────────
+function updateButtons(isRunning) {
+  document.getElementById("btn-start").disabled = isRunning;
+  document.getElementById("btn-icon").textContent  = isRunning ? "⚙️" : "⛳";
+  document.getElementById("btn-label").textContent = isRunning ? "実行中..." : "予約を開始する";
+  document.getElementById("btn-stop").style.display = isRunning ? "block" : "none";
+}
+
+// ─────────────────────────────
+// モーダル
+// ─────────────────────────────
+function openModal(src) {
+  document.getElementById("modal-img").src = src;
+  document.getElementById("modal").classList.add("open");
+}
+function closeModal() {
+  document.getElementById("modal").classList.remove("open");
+}
+document.getElementById("modal").addEventListener("click", e => {
+  if (e.target === document.getElementById("modal")) closeModal();
+});
+</script>
+</body>
+</html>
