@@ -1,0 +1,44 @@
+# TJK 成田ビューゴルフコース 自動予約設定ファイル
+# このファイルを config.yaml にコピーして設定を入力してください
+# cp config.yaml.example config.yaml
+
+# ログイン情報
+login:
+  username: "会員番号"           # TJKの会員番号（数字）
+  password: "パスワード"         # パスワード
+
+# 予約開始時刻（この時刻に自動で予約を試みます）
+reservation_start:
+  date: "2026-09-01"             # 予約受付開始日 (YYYY-MM-DD)
+  time: "10:00:00"               # 予約受付開始時刻 (HH:MM:SS)
+  lead_seconds: 3                # 開始何秒前にブラウザを起動するか
+
+# 予約詳細
+reservation:
+  play_date: "2026-10-01"        # プレー希望日 (YYYY-MM-DD)
+  play_time: "08:30"             # 希望スタート時刻 (HH:MM)
+  num_players: 4                 # プレー人数 (1-4)
+  course: "全コース"              # コース種別
+  caddy: false                   # キャディ希望 (true/false)
+  cart: true                     # カート利用 (true/false)
+
+# ブラウザ設定
+browser:
+  headless: false                # false=ブラウザ表示, true=バックグラウンド
+  slow_mo: 50                    # 操作間隔 (ミリ秒)
+  timeout: 30000                 # タイムアウト (ミリ秒)
+
+# リトライ設定
+retry:
+  max_attempts: 10               # 最大リトライ回数
+  interval_seconds: 0.5          # リトライ間隔 (秒)
+
+# 通知設定 (macOS 通知センター)
+notification:
+  enabled: true
+  sound: true
+
+# ログ設定
+logging:
+  level: "INFO"                  # DEBUG / INFO / WARNING / ERROR
+  file: "reservation.log"

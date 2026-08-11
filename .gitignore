@@ -1,0 +1,21 @@
+# 認証情報（絶対にコミットしないこと）
+config.yaml
+
+# 実行結果・ログ
+*.log
+*.png
+*.json
+screenshots/
+timing_report.json
+inspect_result.json
+debug_golf_page.txt
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# macOS
+.DS_Store
