@@ -7,7 +7,9 @@ TJK 成田ビューゴルフコース 自動予約 Web アプリ
 
 import asyncio
 import json
+import platform
 import queue
+import sys
 import threading
 import time
 from datetime import datetime, timedelta
@@ -133,12 +135,19 @@ def start():
     _push_log("info", "🚀 予約システムを起動しました")
 
     def runner():
+        # Windows では ProactorEventLoop が必要（スレッド内 asyncio 用）
+        if sys.platform == "win32":
+            asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
         try:
-            asyncio.run(_reservation_main(cfg, _stop_event))
+            loop.run_until_complete(_reservation_main(cfg, _stop_event))
         except Exception as e:
             _push_log("error", f"致命的エラー: {e}")
             state["status"]  = "failed"
             state["message"] = "エラーが発生しました"
+        finally:
+            loop.close()
 
     _runner_thread = threading.Thread(target=runner, daemon=True)
     _runner_thread.start()

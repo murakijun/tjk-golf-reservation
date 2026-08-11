@@ -108,10 +108,30 @@ def setup_logging(cfg: dict) -> logging.Logger:
 
 def notify(title: str, message: str, sound: bool = True):
     try:
-        script = f'display notification "{message}" with title "{title}"'
-        if sound:
-            script += ' sound name "default"'
-        subprocess.run(["osascript", "-e", script], check=False)
+        if sys.platform == "darwin":
+            # macOS
+            script = f'display notification "{message}" with title "{title}"'
+            if sound:
+                script += ' sound name "default"'
+            subprocess.run(["osascript", "-e", script], check=False)
+        elif sys.platform == "win32":
+            # Windows — PowerShell トースト通知
+            ps = (
+                f"[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, "
+                f"ContentType = WindowsRuntime] | Out-Null; "
+                f"$xml = [Windows.UI.Notifications.ToastNotificationManager]"
+                f"::GetTemplateContent('ToastText02'); "
+                f"$xml.GetElementsByTagName('text')[0].AppendChild("
+                f"$xml.CreateTextNode('{title}')) | Out-Null; "
+                f"$xml.GetElementsByTagName('text')[1].AppendChild("
+                f"$xml.CreateTextNode('{message}')) | Out-Null; "
+                f"[Windows.UI.Notifications.ToastNotificationManager]"
+                f"::CreateToastNotifier('TJK予約').Show("
+                f"[Windows.UI.Notifications.ToastNotification]::new($xml))"
+            )
+            subprocess.run(["powershell", "-Command", ps], check=False,
+                           creationflags=0x08000000)  # CREATE_NO_WINDOW
+        # Linux は通知なし（省略）
     except Exception:
         pass
 
@@ -578,6 +598,10 @@ def main():
     if cfg["login"]["username"] == "your_username":
         log.error("config.yaml のユーザー名・パスワードを設定してください")
         sys.exit(1)
+
+    # Windows: ProactorEventLoop が必要
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
     # 待機（デバッグモードは即時実行）
     if not debug_mode:
