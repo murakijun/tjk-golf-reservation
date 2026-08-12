@@ -164,6 +164,26 @@
   }
   .btn-stop:hover { background: #ffebee; }
 
+  .btn-test {
+    width: 100%;
+    padding: 13px;
+    background: #fff;
+    color: var(--blue);
+    font-size: .95rem;
+    font-weight: 600;
+    border: 2px solid var(--blue);
+    border-radius: var(--radius);
+    cursor: pointer;
+    margin-top: 10px;
+    transition: background .15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+  .btn-test:hover:not(:disabled) { background: #e3f2fd; }
+  .btn-test:disabled { opacity: .4; cursor: not-allowed; }
+
   /* ─── ステータスバッジ ─── */
   #status-badge {
     padding: 10px 16px;
@@ -397,6 +417,16 @@
       </div>
     </details>
 
+    <button class="btn-test" id="btn-test" onclick="testReservation()">
+      🔍 テスト実行（送信なし・動作確認用）
+    </button>
+
+    <div style="display:flex;align-items:center;gap:10px;margin:14px 0">
+      <div style="flex:1;height:1px;background:#e0e0e0"></div>
+      <span style="font-size:.75rem;color:#b0bec5">本番実行</span>
+      <div style="flex:1;height:1px;background:#e0e0e0"></div>
+    </div>
+
     <button class="btn-start" id="btn-start" onclick="startReservation()">
       <span id="btn-icon">⛳</span>
       <span id="btn-label">予約を開始する</span>
@@ -497,6 +527,49 @@ function validate() {
   if (!v("play-date"))  { alert("プレー希望日を入力してください"); return false; }
   if (!v("play-time"))  { alert("希望スタート時刻を入力してください"); return false; }
   return true;
+}
+
+// ─────────────────────────────
+// テスト実行（送信なし）
+// ─────────────────────────────
+async function testReservation() {
+  if (!document.getElementById("username").value.trim()) {
+    alert("テスト実行には会員番号とパスワードの入力が必要です");
+    return;
+  }
+  if (!document.getElementById("password").value) {
+    alert("パスワードを入力してください");
+    return;
+  }
+  if (!confirm("テスト実行します。\n\nブラウザが開いて TJK にログインし、\nゴルフ予約ページまで移動します。\n予約の送信はしません。\n\nよろしいですか？")) return;
+
+  // start_date/time を「今すぐ」に設定してdebug_mode=trueで送信
+  const now = new Date();
+  const payload = {
+    username:    document.getElementById("username").value.trim(),
+    password:    document.getElementById("password").value,
+    start_date:  now.toISOString().slice(0,10),
+    start_time:  now.toTimeString().slice(0,5),
+    play_date:   document.getElementById("play-date").value || now.toISOString().slice(0,10),
+    play_time:   document.getElementById("play-time").value || "08:30",
+    num_players: document.getElementById("num-players").value,
+    max_attempts: 1,
+    headless:    false,   // テストは必ずブラウザ表示
+    debug_mode:  true,
+  };
+
+  const res = await fetch("/api/start", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(payload),
+  });
+  const json = await res.json();
+  if (!json.ok) { alert("エラー: " + (json.error || "不明なエラー")); return; }
+
+  running = true;
+  updateButtons(true);
+  clearLog();
+  connectSSE();
 }
 
 // ─────────────────────────────
@@ -649,6 +722,7 @@ function applyState(s) {
 // ─────────────────────────────
 function updateButtons(isRunning) {
   document.getElementById("btn-start").disabled = isRunning;
+  document.getElementById("btn-test").disabled  = isRunning;
   document.getElementById("btn-icon").textContent  = isRunning ? "⚙️" : "⛳";
   document.getElementById("btn-label").textContent = isRunning ? "実行中..." : "予約を開始する";
   document.getElementById("btn-stop").style.display = isRunning ? "block" : "none";

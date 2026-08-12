@@ -123,16 +123,19 @@ def start():
         },
     }
 
+    debug_mode = bool(data.get("debug_mode", False))
+
     _stop_event = threading.Event()
     state.update({
         "status":      "waiting",
-        "message":     "予約開始時刻まで待機中...",
+        "message":     "テスト実行中..." if debug_mode else "予約開始時刻まで待機中...",
         "started_at":  datetime.now().isoformat(),
         "attempt":     0,
         "max_attempts": cfg["retry"]["max_attempts"],
         "screenshots": [],
+        "debug_mode":  debug_mode,
     })
-    _push_log("info", "🚀 予約システムを起動しました")
+    _push_log("info", "🔍 テスト実行（送信なし）" if debug_mode else "🚀 予約システムを起動しました")
 
     def runner():
         # Windows では ProactorEventLoop が必要（スレッド内 asyncio 用）
@@ -141,7 +144,7 @@ def start():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            loop.run_until_complete(_reservation_main(cfg, _stop_event))
+            loop.run_until_complete(_reservation_main(cfg, _stop_event, debug_mode))
         except Exception as e:
             _push_log("error", f"致命的エラー: {e}")
             state["status"]  = "failed"
@@ -207,7 +210,7 @@ async def _take_screenshot(page, name: str):
     return fname
 
 
-async def _reservation_main(cfg: dict, stop_ev: threading.Event):
+async def _reservation_main(cfg: dict, stop_ev: threading.Event, debug_mode: bool = False):
     t_total = time.perf_counter()
 
     # ─── 待機 ───
@@ -217,7 +220,7 @@ async def _reservation_main(cfg: dict, stop_ev: threading.Event):
     wake_dt  = start_dt - timedelta(seconds=lead)
     now      = datetime.now()
 
-    if now < wake_dt:
+    if now < wake_dt and not debug_mode:
         remaining = (wake_dt - now).total_seconds()
         _push_log("info", f"⏰ 予約開始: {start_dt.strftime('%m/%d %H:%M:%S')}  "
                           f"（残り約{int(remaining//60)}分{int(remaining%60)}秒）")
@@ -394,6 +397,22 @@ async def _reservation_main(cfg: dict, stop_ev: threading.Event):
                             continue
 
                     await _take_screenshot(page, f"04_form_{attempt}")
+
+                    # テストモードはここで終了（送信しない）
+                    if debug_mode:
+                        body_preview = (await page.inner_text("body"))[:800]
+                        _push_log("info", "─── テスト実行完了 ───")
+                        _push_log("info", "✅ ログイン・ページ遷移・フォーム確認まで正常に動作しました")
+                        _push_log("info", "📋 予約ページの内容（抜粋）:")
+                        for line in body_preview.split("\n"):
+                            if line.strip():
+                                _push_log("info", f"   {line.strip()}")
+                        state["status"]  = "success"
+                        state["message"] = "テスト完了 ✅ 本番実行の準備ができています"
+                        _push_state()
+                        await asyncio.sleep(5)   # ブラウザを5秒表示してから閉じる
+                        await browser.close()
+                        return
 
                     # 検索ボタン
                     for sel in ['button:has-text("検索")', 'input[value="検索"]',
