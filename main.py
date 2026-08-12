@@ -20,10 +20,9 @@ from pathlib import Path
 import yaml
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeout
 
-BASE_URL        = "https://www.tjk.gr.jp"
-LOGIN_URL       = f"{BASE_URL}/login/"
-LOGIN_ACTION    = f"{BASE_URL}/assist/ready/dologin"
-GOLF_AUTH_URL   = f"{BASE_URL}/auth/pri-narita"    # ゴルフ予約システム（ログイン必須）
+# ─── TJK ゴルフ予約専用システム（www5サーバー）───
+GOLF_BASE     = "https://www5.tjk.gr.jp/TJK"
+LOGIN_URL     = f"{GOLF_BASE}/login_wing.php"
 SCREENSHOTS_DIR = Path(__file__).parent / "screenshots"
 
 # ─────────────────────────────────────────
@@ -195,18 +194,27 @@ async def login(page, cfg: dict, log: logging.Logger, timer: Timer) -> bool:
 
     await screenshot(page, "01_login_page")
 
-    # ユーザー名 (name="account")
+    # ユーザーIDを XXXX-XXXXXX 形式で分割（ゼロ埋め）
+    uid = login_cfg["username"].replace(" ", "")
+    if "-" in uid:
+        id1, id2 = uid.split("-", 1)
+    else:
+        id1, id2 = uid[:4], uid[4:]
+    id1 = id1.zfill(4)
+    id2 = id2.zfill(6)
+    log.info(f"  ユーザーID: {id1}-{id2}")
+
     try:
-        await page.wait_for_selector('input[name="account"]', timeout=5000)
-        await page.fill('input[name="account"]', login_cfg["username"])
+        await page.wait_for_selector('input[name="login_id1"]', timeout=5000)
+        await page.fill('input[name="login_id1"]', id1)
+        await page.fill('input[name="login_id2"]', id2)
     except Exception as e:
-        log.error(f"ユーザー名フィールドが見つかりません: {e}")
+        log.error(f"ユーザーIDフィールドが見つかりません: {e}")
         await screenshot(page, "err_no_username")
         return False
 
-    # パスワード (name="password", type=text)
     try:
-        await page.fill('input[name="password"]', login_cfg["password"])
+        await page.fill('input[name="pass"]', login_cfg["password"])
     except Exception as e:
         log.error(f"パスワードフィールドが見つかりません: {e}")
         await screenshot(page, "err_no_password")
@@ -214,14 +222,13 @@ async def login(page, cfg: dict, log: logging.Logger, timer: Timer) -> bool:
 
     timer.mark("フォーム入力完了")
 
-    # ログインボタン (input[type="submit"])
-    await page.click('input[type="submit"]')
+    # JavaScriptのcheck()関数を呼ぶ（内部でdocument.fm.submit()を実行）
+    await page.evaluate("check()")
     timer.mark("ログインボタンクリック")
 
-    # ログイン後のページを待機
     try:
         await page.wait_for_load_state("domcontentloaded", timeout=timeout)
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(0.8)
     except PlaywrightTimeout:
         pass
 
@@ -232,17 +239,19 @@ async def login(page, cfg: dict, log: logging.Logger, timer: Timer) -> bool:
     await screenshot(page, "02_after_login")
 
     # ログイン成否判定
-    content = await page.content()
-    if "ログアウト" in content or "マイページ" in content or "auth" in current_url:
-        log.info("✅ ログイン成功")
-        return True
-    elif "パスワードが違います" in content or "ユーザー名が違います" in content or "/login/" in current_url:
-        log.error("❌ 認証エラー：ユーザー名またはパスワードを確認してください")
+    body = await page.inner_text("body")
+    error_kw = ["パスワードが違", "ＩＤが違", "IDが違", "ログインできません", "認証エラー"]
+    if any(k in body for k in error_kw):
+        log.error("❌ 認証エラー：ユーザーIDまたはパスワードを確認してください")
         await screenshot(page, "err_login_failed")
         return False
+    elif "login_wing.php" in current_url and "act=post" not in current_url:
+        log.warning(f"⚠️  ログインページに留まっています (URL: {current_url})")
+        log.warning("   ユーザーIDまたはパスワードが違う可能性があります")
+        return False
     else:
-        log.warning(f"⚠️  ログイン状態不明 (URL: {current_url})")
-        return True  # セッションクッキーがあれば続行を試みる
+        log.info("✅ ログイン成功")
+        return True
 
 
 # ─────────────────────────────────────────
@@ -252,34 +261,36 @@ async def login(page, cfg: dict, log: logging.Logger, timer: Timer) -> bool:
 async def navigate_to_golf(page, cfg: dict, log: logging.Logger, timer: Timer) -> bool:
     timeout = cfg.get("browser", {}).get("timeout", 30000)
 
-    log.info(f"ゴルフ予約システムへ移動: {GOLF_AUTH_URL}")
-    await page.goto(GOLF_AUTH_URL, wait_until="domcontentloaded", timeout=timeout)
-    await asyncio.sleep(1)
-    timer.mark("ゴルフ予約ページ読み込み")
+    # ログイン後のメニューからゴルフ予約リンクを探す
+    log.info(f"ゴルフ予約メニューを探しています（現在: {page.url}）")
 
-    await screenshot(page, "03_golf_reservation_page")
-
-    current_url = page.url
-    log.info(f"現在のURL: {current_url}")
-
-    # 「同意する」ボタンがあれば同意
-    agree_selectors = [
-        'button:has-text("同意する")',
-        'input[value="同意する"]',
-        'a:has-text("同意する")',
+    golf_link_selectors = [
+        'a:has-text("ゴルフ")',
+        'a:has-text("予約")',
+        'a:has-text("成田")',
+        'a[href*="golf"]',
+        'a[href*="yoyaku"]',
+        'a[href*="reserve"]',
+        'input[value*="ゴルフ"]',
+        'input[value*="予約"]',
+        'input[type="submit"]',   # メニューボタン
     ]
-    for sel in agree_selectors:
+    for sel in golf_link_selectors:
         try:
             elem = await page.query_selector(sel)
             if elem and await elem.is_visible():
-                log.info("個人情報同意ボタンをクリック")
+                txt = await elem.inner_text() if elem else ""
+                log.info(f"  リンク発見: [{txt.strip()}] → クリック")
                 await elem.click()
                 await page.wait_for_load_state("domcontentloaded", timeout=timeout)
-                timer.mark("個人情報同意")
-                await screenshot(page, "04_after_agree")
+                await asyncio.sleep(0.8)
                 break
         except Exception:
             continue
+
+    timer.mark("ゴルフ予約ページ読み込み")
+    await screenshot(page, "03_golf_reservation_page")
+    log.info(f"現在のURL: {page.url}")
 
     # ページ内容を確認
     content = await page.content()

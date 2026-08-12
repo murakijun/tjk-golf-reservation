@@ -23,9 +23,10 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeout
 
-BASE_URL      = "https://www.tjk.gr.jp"
-LOGIN_URL     = f"{BASE_URL}/login/"
-GOLF_AUTH_URL = f"{BASE_URL}/auth/pri-narita"
+# ─── TJK ゴルフ予約専用システム（www5サーバー）───
+GOLF_BASE     = "https://www5.tjk.gr.jp/TJK"
+LOGIN_URL     = f"{GOLF_BASE}/login_wing.php"
+# ログイン後はwww5内のメニューページへ遷移する（URLはログイン後に確認）
 SCREENSHOTS   = Path(__file__).parent / "screenshots"
 SCREENSHOTS.mkdir(exist_ok=True)
 
@@ -264,29 +265,47 @@ async def _reservation_main(cfg: dict, stop_ev: threading.Event, debug_mode: boo
         page = await context.new_page()
 
         try:
-            # ─── ログイン ───
+            # ─── ログイン (www5.tjk.gr.jp) ───
             _push_log("info", "🔐 ログイン中...")
+            _push_log("info", f"  URL: {LOGIN_URL}")
             state["message"] = "ログイン中..."
             _push_state()
 
             t0 = time.perf_counter()
             await page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=30000)
             _push_log("info", f"  ページ読み込み: {time.perf_counter()-t0:.2f}s")
-
             await _take_screenshot(page, "01_login")
 
-            await page.fill('input[name="account"]', cfg["login"]["username"])
-            await page.fill('input[name="password"]', cfg["login"]["password"])
-            await page.click('input[type="submit"]')
+            # ユーザーIDを XXXX-XXXXXX 形式で分割（ゼロ埋め）
+            uid = cfg["login"]["username"].replace(" ", "")
+            if "-" in uid:
+                id1, id2 = uid.split("-", 1)
+            else:
+                # ハイフンなしの場合は先頭4桁/残りで分割
+                id1, id2 = uid[:4], uid[4:]
+            id1 = id1.zfill(4)   # 4桁にゼロ埋め
+            id2 = id2.zfill(6)   # 6桁にゼロ埋め
+            _push_log("info", f"  ユーザーID: {id1}-{id2}")
+
+            await page.fill('input[name="login_id1"]', id1)
+            await page.fill('input[name="login_id2"]', id2)
+            await page.fill('input[name="pass"]', cfg["login"]["password"])
+
+            # JavaScriptのcheck()関数を呼ぶ（内部でdocument.fm.submit()を実行）
+            await page.evaluate("check()")
             await page.wait_for_load_state("domcontentloaded", timeout=30000)
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.8)
 
             login_url = page.url
             body      = await page.inner_text("body")
             await _take_screenshot(page, "02_after_login")
+            _push_log("info", f"  ログイン後URL: {login_url}")
 
-            if "パスワード" in body and "違" in body:
-                _push_log("error", "❌ ログインエラー：会員番号またはパスワードが違います")
+            # エラー判定
+            error_kw = ["パスワードが違", "ＩＤが違", "IDが違", "ログインできません",
+                        "入力してください", "認証エラー"]
+            if any(k in body for k in error_kw):
+                _push_log("error", "❌ ログインエラー：ユーザーIDまたはパスワードを確認してください")
                 state["status"]  = "failed"
                 state["message"] = "ログイン失敗"
                 _push_state()
@@ -325,23 +344,42 @@ async def _reservation_main(cfg: dict, stop_ev: threading.Event, debug_mode: boo
                 t_att = time.perf_counter()
 
                 try:
-                    # ゴルフ予約ページへ
-                    await page.goto(GOLF_AUTH_URL, wait_until="domcontentloaded", timeout=30000)
-                    await asyncio.sleep(0.8)
-                    await _take_screenshot(page, f"03_golf_{attempt}")
+                    # ─── ゴルフ予約ページへ遷移 ───
+                    # ログイン後のwww5メニューからゴルフ予約リンクを探す
+                    current_url = page.url
+                    _push_log("info", f"  現在のURL: {current_url}")
 
-                    # 「同意する」があれば同意
-                    for sel in ['button:has-text("同意する")', 'input[value="同意する"]',
-                                'a:has-text("同意する")']:
+                    # ゴルフ予約リンクを探してクリック
+                    golf_link_found = False
+                    golf_link_selectors = [
+                        'a:has-text("ゴルフ")',
+                        'a:has-text("予約")',
+                        'a:has-text("成田")',
+                        'a[href*="golf"]',
+                        'a[href*="yoyaku"]',
+                        'a[href*="reserve"]',
+                        'input[value*="ゴルフ"]',
+                        'input[value*="予約"]',
+                    ]
+                    for sel in golf_link_selectors:
                         try:
                             el = await page.query_selector(sel)
                             if el and await el.is_visible():
-                                _push_log("info", "  個人情報に同意します")
+                                txt = await el.inner_text() if el else ""
+                                _push_log("info", f"  ゴルフ予約リンク発見: [{txt.strip()}]")
                                 await el.click()
-                                await page.wait_for_load_state("domcontentloaded", timeout=10000)
+                                await page.wait_for_load_state("domcontentloaded", timeout=15000)
+                                await asyncio.sleep(0.8)
+                                golf_link_found = True
                                 break
                         except Exception:
                             continue
+
+                    if not golf_link_found:
+                        _push_log("warn", "  ゴルフ予約リンクが見つかりません（現在のページを使用）")
+
+                    await _take_screenshot(page, f"03_golf_{attempt}")
+                    _push_log("info", f"  予約ページURL: {page.url}")
 
                     # フォーム要素を調査してログ
                     elements = await page.evaluate("""() =>
@@ -350,6 +388,9 @@ async def _reservation_main(cfg: dict, stop_ev: threading.Event, debug_mode: boo
                         }))
                     """)
                     _push_log("info", f"  フォーム要素数: {len(elements)}")
+                    for el in elements[:15]:
+                        if el["name"] and el["type"] not in ("hidden",):
+                            _push_log("info", f"    {el['tag']} name={el['name']} type={el['type']} id={el['id']}")
 
                     # 日付入力
                     res = cfg["reservation"]

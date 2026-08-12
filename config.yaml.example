@@ -3,8 +3,9 @@
 # cp config.yaml.example config.yaml
 
 # ログイン情報
+# 予約サイト: https://www5.tjk.gr.jp/TJK/login_wing.php
 login:
-  username: "会員番号"           # TJKの会員番号（数字）
+  username: "0123-456789"       # ユーザーID（XXXX-XXXXXX形式、ハイフン含む）
   password: "パスワード"         # パスワード
 
 # 予約開始時刻（この時刻に自動で予約を試みます）
