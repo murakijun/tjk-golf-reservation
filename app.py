@@ -139,6 +139,7 @@ def start():
     _push_log("info", "🔍 テスト実行（送信なし）" if debug_mode else "🚀 予約システムを起動しました")
 
     def runner():
+        import traceback
         # Windows では ProactorEventLoop が必要（スレッド内 asyncio 用）
         if sys.platform == "win32":
             asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
@@ -147,9 +148,12 @@ def start():
         try:
             loop.run_until_complete(_reservation_main(cfg, _stop_event, debug_mode))
         except Exception as e:
-            _push_log("error", f"致命的エラー: {e}")
+            tb = traceback.format_exc()
+            _push_log("error", f"❌ 致命的エラー: {e}")
+            for line in tb.splitlines():
+                _push_log("error", f"  {line}")
             state["status"]  = "failed"
-            state["message"] = "エラーが発生しました"
+            state["message"] = f"エラー: {e}"
         finally:
             loop.close()
 
@@ -292,9 +296,14 @@ async def _reservation_main(cfg: dict, stop_ev: threading.Event, debug_mode: boo
             await page.fill('input[name="pass"]', cfg["login"]["password"])
 
             # JavaScriptのcheck()関数を呼ぶ（内部でdocument.fm.submit()を実行）
-            await page.evaluate("check()")
-            await page.wait_for_load_state("domcontentloaded", timeout=30000)
-            await asyncio.sleep(0.8)
+            # expect_navigation でナビゲーション完了を確実に待つ
+            try:
+                async with page.expect_navigation(timeout=15000):
+                    await page.evaluate("check()")
+            except Exception as nav_err:
+                _push_log("warn", f"  ナビゲーション待機: {nav_err}（続行）")
+                await asyncio.sleep(1)
+            await asyncio.sleep(0.5)
 
             login_url = page.url
             body      = await page.inner_text("body")
